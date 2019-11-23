@@ -73,6 +73,14 @@
 
 /*==================[external data definition]===============================*/
 
+typedef struct
+{
+	float tension;
+	float temperatura;
+	float alarma_baja;
+	float alarma_alta;
+}
+medicion;
 
 /**
  * C++ version 0.4 char* style "itoa":
@@ -129,7 +137,7 @@ static void initHardware(void)
    boardConfig();
 
    /* Inicializar Uart */
-   uartConfig( UART_USB, 115200 );
+   uartConfig( UART_232, 9600 );
    //debugPrintConfigUart( UART_USB, 115200 );
    i2cConfig( I2C0, 100000 );	// Inicializa la comunicación I2C
    adcConfig( ADC_ENABLE );		// Inicializa el ADC
@@ -138,7 +146,7 @@ static void initHardware(void)
 
 
 void vPrintString( char * string){
-   uartWriteString( UART_USB, string );
+   uartWriteString( UART_232, string );
 }
 
 
@@ -147,7 +155,7 @@ void vPrintNumber( int32_t number){
    /* Conversión de number entero a ascii con base decimal */
    itoa( number, uartBuff, 10 ); /* 10 significa decimal */
    /* Enviar number */
-   uartWriteString( UART_USB, uartBuff );
+   uartWriteString( UART_232, uartBuff );
 }
 
 
@@ -177,7 +185,7 @@ int main( void )
 	 initHardware();
 
     /* The queue is created to hold a maximum of 5 long values. */
-    xQueue = xQueueCreate( 5, sizeof( float ) );
+    xQueue = xQueueCreate( 3, sizeof( medicion ) );
 
 	if( xQueue != NULL )
 	{
@@ -187,7 +195,7 @@ int main( void )
 		will continuously write 200 to the queue.  Both tasks are created at
 		priority 1. */
 		xTaskCreate( vSenderTask, "Sender1", 240, ( void * ) 100, 1, NULL );
-		xTaskCreate( vSenderTask, "Sender2", 240, ( void * ) 200, 1, NULL );
+//		xTaskCreate( vSenderTask, "Sender2", 240, ( void * ) 200, 1, NULL );
 
 		/* Create the task that will read from the queue.  The task is created with
 		priority 2, so above the priority of the sender tasks. */
@@ -212,7 +220,11 @@ int main( void )
 
 static void vSenderTask( void *pvParameters )
 {
-float lValueToSend;
+
+uint16_t t_obj1=0;
+uint8_t dato[3];
+uint8_t dataToRead;
+medicion medicion_actual={0,0,30,30};
 portBASE_TYPE xStatus;
 
 	/* Two instances are created of this task so the value that is sent to the
@@ -235,9 +247,25 @@ portBASE_TYPE xStatus;
 		should the queue already be full.  In this case we don’t specify a block
 		time because there should always be space in the queue. */
 
-		lValueToSend = adcRead( CH1 ) * 3.30 / 1024 ;
+		medicion_actual.tension = adcRead( CH1 ) * 3.30 / 1024 ;
 
-		xStatus = xQueueSendToBack( xQueue, &lValueToSend, 0 );
+		/* Leo temperatura de objeto del sensor */
+		dataToRead = TOBJ1_ADDR;
+		i2cRead( I2C0,GY906_ADDR,&dataToRead,1,TRUE,&dato,3,TRUE );
+		t_obj1 = dato[0];
+		t_obj1 |= dato[1]<<8;
+		medicion_actual.temperatura = 0.02 * t_obj1 - 273.15;
+
+		// valores de prueba
+
+		medicion_actual.temperatura = 15;
+
+		medicion_actual.alarma_baja = 20;
+
+		medicion_actual.alarma_alta = 70;
+
+		xStatus = xQueueSendToBack( xQueue, &medicion_actual, 0 );
+
 
 		if( xStatus != pdPASS )
 		{
@@ -255,7 +283,7 @@ portBASE_TYPE xStatus;
 static void vReceiverTask( void *pvParameters )
 {
 /* Declare the variable that will hold the values received from the queue. */
-float lReceivedValue;
+medicion medicion_actual={0,0,30,30};
 char buffout[64];		// Resultado en string
 portBASE_TYPE xStatus;
 const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
@@ -281,16 +309,56 @@ const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
 		the last parameter is the block time – the maximum amount of time that the
 		task should remain in the Blocked state to wait for data to be available should
 		the queue already be empty. */
-		xStatus = xQueueReceive( xQueue, &lReceivedValue, xTicksToWait );
+		xStatus = xQueueReceive( xQueue, &medicion_actual, xTicksToWait );
+		//xStatus = xQueueReceive( xQueue, &lReceivedValue[0], 0 );
+
 
 		if( xStatus == pdPASS )
 		{
 			/* Data was successfully received from the queue, print out the received
 			value. */
-			vPrintString( "Entrada analógica: " );
-			floatToString( lReceivedValue, buffout, 0 );
+			//vPrintString( "Entrada analógica: " );
+
+			// tension actual
+
+			vPrintString( "*V" );
+			floatToString( medicion_actual.tension, buffout, 0 );
 			vPrintString( buffout );
 			vPrintString("\r\n");
+
+			// temperatura actual
+
+			vPrintString( "*T" );
+			floatToString( medicion_actual.temperatura, buffout, 0 );
+			vPrintString( buffout );
+			vPrintString("\r\n");
+
+			// alarma de temperatura baja
+			vPrintString( "*B" );
+			floatToString( medicion_actual.alarma_baja, buffout, 0 );
+			vPrintString( buffout );
+			vPrintString("\r\n");
+
+
+			// alarma de temperatura alta
+
+			vPrintString( "*A" );
+			floatToString( medicion_actual.alarma_alta, buffout, 0 );
+			vPrintString( buffout );
+			vPrintString("\r\n");
+
+			if(medicion_actual.temperatura <= medicion_actual.alarma_baja)
+			{
+				vPrintString( "*L" );
+				vPrintString("\r\n");
+			}
+			else if(medicion_actual.temperatura >= medicion_actual.alarma_alta)
+			{
+				vPrintString( "*H" );
+				vPrintString("\r\n");
+
+			}
+
 			//vPrintStringAndNumber( "Received = ", lReceivedValue );
 		}
 		else
@@ -300,6 +368,9 @@ const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
 			continuously writing to the queue. */
 			vPrintString( "Could not receive from the queue.\r\n" );
 		}
+
+
+
 	}
 }
 /*-----------------------------------------------------------*/
