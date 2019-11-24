@@ -57,6 +57,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "strings.h"
+#include "string.h"
+#include <stdlib.h>
 
 
 /*==================[macros and definitions]=================================*/
@@ -92,6 +95,7 @@ medicion;
 static void floatToString( float valor, char *dst, uint8_t pos ){
 	uint16_t val;
 	val = 100 * valor;
+
 	dst[pos] = (val / 1000) + '0';
 	pos++;
 	dst[pos] = (val % 1000) / 100 + '0';
@@ -103,6 +107,27 @@ static void floatToString( float valor, char *dst, uint8_t pos ){
 	dst[pos] = (val % 10)  + '0';
 	pos++;
 	dst[pos] = '\0';
+
+}
+
+static void floatToString2( float valor, char *dst, uint8_t pos ){
+	uint16_t val;
+	val = 100 * valor;
+
+	dst[pos] = (val / 10000) + '0';
+	pos++;
+	dst[pos] = (val % 10000)/1000 + '0';
+	pos++;
+	dst[pos] = (val % 1000) / 100 + '0';
+	pos++;
+	dst[pos] = '.';
+	pos++;
+	dst[pos] = (val % 100) / 10 + '0';
+	pos++;
+	dst[pos] = (val % 10)  + '0';
+	pos++;
+	dst[pos] = '\0';
+
 }
 
 char* itoa(int value, char* result, int base) {
@@ -208,7 +233,6 @@ int main( void )
 	{
 		/* The queue could not be created. */
 	}
-
     /* If all is well we will never reach here as the scheduler will now be
     running the tasks.  If we do reach here then it is likely that there was
     insufficient heap memory available for a resource to be created. */
@@ -224,8 +248,12 @@ static void vSenderTask( void *pvParameters )
 uint16_t t_obj1=0;
 uint8_t dato[3];
 uint8_t dataToRead;
-medicion medicion_actual={0,0,30,30};
+static medicion medicion_actual={0,0,0,100};
+uint8_t alarma = 0;
+char buffer_alarma_baja[64];
+char buffer_alarma_alta[64];
 portBASE_TYPE xStatus;
+static int i=0;
 
 	/* Two instances are created of this task so the value that is sent to the
 	queue is passed in via the task parameter rather than be hard coded.  This way
@@ -256,13 +284,63 @@ portBASE_TYPE xStatus;
 		t_obj1 |= dato[1]<<8;
 		medicion_actual.temperatura = 0.02 * t_obj1 - 273.15;
 
+
 		// valores de prueba
 
-		medicion_actual.temperatura = 15;
+		if(i>100)
+		{
+			i=0;
+		}
 
-		medicion_actual.alarma_baja = 20;
+		medicion_actual.temperatura = i;
 
-		medicion_actual.alarma_alta = 70;
+		i++;
+
+		if( uartReadByte( UART_232, &alarma ) ){
+
+			if(alarma == 'B'){
+
+				uartReadByte( UART_232, &alarma );
+
+				int i=0;
+				while(alarma != 'B')
+				{
+					buffer_alarma_baja[i]=alarma;
+
+					i++;
+
+					uartReadByte( UART_232, &alarma );
+
+				}
+
+				buffer_alarma_baja[i]='\0';
+
+				medicion_actual.alarma_baja = atoi(buffer_alarma_baja);
+
+			}
+
+			if(alarma == 'A'){
+
+				uartReadByte( UART_232, &alarma );
+
+				int i=0;
+				while(alarma != 'A')
+				{
+					buffer_alarma_alta[i]=alarma;
+
+					i++;
+
+					uartReadByte( UART_232, &alarma );
+
+				}
+
+				buffer_alarma_alta[i]='\0';
+
+				medicion_actual.alarma_alta = atoi(buffer_alarma_alta);
+
+			}
+
+		}
 
 		xStatus = xQueueSendToBack( xQueue, &medicion_actual, 0 );
 
@@ -282,11 +360,15 @@ portBASE_TYPE xStatus;
 
 static void vReceiverTask( void *pvParameters )
 {
+
 /* Declare the variable that will hold the values received from the queue. */
-medicion medicion_actual={0,0,30,30};
+static medicion medicion_actual={0,0,0,100};
 char buffout[64];		// Resultado en string
+char buffer_alarma_baja[64];
+char buffer_alarma_alta[64];
 portBASE_TYPE xStatus;
 const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
+static int tiempo=0;
 
 	/* This task is also defined within an infinite loop. */
 	for( ;; )
@@ -310,14 +392,10 @@ const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
 		task should remain in the Blocked state to wait for data to be available should
 		the queue already be empty. */
 		xStatus = xQueueReceive( xQueue, &medicion_actual, xTicksToWait );
-		//xStatus = xQueueReceive( xQueue, &lReceivedValue[0], 0 );
-
 
 		if( xStatus == pdPASS )
 		{
-			/* Data was successfully received from the queue, print out the received
-			value. */
-			//vPrintString( "Entrada analógica: " );
+			/* Data was successfully received from the queue, print out the received value. */
 
 			// tension actual
 
@@ -333,33 +411,49 @@ const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
 			vPrintString( buffout );
 			vPrintString("\r\n");
 
+			// envia la temperatura al monitor
+
+			vPrintString( "*M" );
+			vPrintString( "X" );
+			itoa(tiempo,buffout,10);
+			vPrintString( buffout );
+			vPrintString( "Y" );
+			floatToString( medicion_actual.temperatura, buffout, 0 );
+			vPrintString( buffout );
+			vPrintString("*\r\n");
+
 			// alarma de temperatura baja
 			vPrintString( "*B" );
-			floatToString( medicion_actual.alarma_baja, buffout, 0 );
-			vPrintString( buffout );
+			floatToString( medicion_actual.alarma_baja, buffer_alarma_baja, 0 );
+			vPrintString( buffer_alarma_baja );
 			vPrintString("\r\n");
-
 
 			// alarma de temperatura alta
 
 			vPrintString( "*A" );
-			floatToString( medicion_actual.alarma_alta, buffout, 0 );
-			vPrintString( buffout );
+			floatToString2( medicion_actual.alarma_alta, buffer_alarma_alta, 0 );
+			vPrintString( buffer_alarma_alta );
 			vPrintString("\r\n");
 
-			if(medicion_actual.temperatura <= medicion_actual.alarma_baja)
+			if(medicion_actual.temperatura < medicion_actual.alarma_baja)
 			{
 				vPrintString( "*L" );
 				vPrintString("\r\n");
 			}
-			else if(medicion_actual.temperatura >= medicion_actual.alarma_alta)
+			if(medicion_actual.temperatura > medicion_actual.alarma_alta)
 			{
 				vPrintString( "*H" );
 				vPrintString("\r\n");
 
 			}
 
-			//vPrintStringAndNumber( "Received = ", lReceivedValue );
+			tiempo++;
+
+			if(tiempo>100)
+			{
+				tiempo=0;
+			}
+
 		}
 		else
 		{
