@@ -255,6 +255,12 @@ char buffer_alarma_alta[64];
 portBASE_TYPE xStatus;
 static int i=0;
 
+portTickType xLastExecutionTime;
+
+	xLastExecutionTime = xTaskGetTickCount();
+
+
+
 	/* Two instances are created of this task so the value that is sent to the
 	queue is passed in via the task parameter rather than be hard coded.  This way
 	each instance can use a different value.  Cast the parameter to the required
@@ -353,7 +359,8 @@ static int i=0;
 		}
 
 		/* Allow the other sender task to execute. */
-		taskYIELD();
+		//taskYIELD();
+		vTaskDelayUntil(&xLastExecutionTime, 500);
 	}
 }
 /*-----------------------------------------------------------*/
@@ -369,6 +376,10 @@ char buffer_alarma_alta[64];
 portBASE_TYPE xStatus;
 const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
 static int tiempo=0;
+
+portTickType xLastExecutionTime;
+
+	xLastExecutionTime = xTaskGetTickCount();
 
 	/* This task is also defined within an infinite loop. */
 	for( ;; )
@@ -463,7 +474,7 @@ static int tiempo=0;
 			vPrintString( "Could not receive from the queue.\r\n" );
 		}
 
-
+		vTaskDelayUntil(&xLastExecutionTime, 500);
 
 	}
 }
