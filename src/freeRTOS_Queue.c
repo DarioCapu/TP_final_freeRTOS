@@ -1,60 +1,16 @@
-/* Copyright 2016, Eric Pernia
- * All rights reserved.
- *
- * This file is part of lpc1769_template.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- *    contributors may be used to endorse or promote products derived from this
- *    software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- */
+/*============== PROYECTO FINAL - MONITOR DE TEMPERATURA ====================*/
 
-/** @brief Blinky using FreeRTOS.
- *
- *
- * NOTE: It's interesting to check behavior differences between standard and
- * tickless mode. Set @ref configUSE_TICKLESS_IDLE to 1, increment a counter
- * in @ref vApplicationTickHook and print the counter value every second
- * inside a task. In standard mode the counter will have a value around 1000.
- * In tickless mode, it will be around 25.
- *
- */
 
-/** \addtogroup rtos_blink FreeRTOS blink example
- ** @{ */
-
-/*==================[inclusions]=============================================*/
+/*==================  ARCHIVOS DE CABECERA ==================================*/
 
 #include "../../TP_final_freeRTOS/inc/FreeRTOSConfig.h"
 #include "../../TP_final_freeRTOS/inc/main.h"
 #include "board.h"
-#include "sapi.h"        // <= sAPI header
-#include "sapi_i2c.h"   /* <= sAPI I2C header */
-#include "sapi_adc.h"	// sAPI ADC header
+#include "sapi.h"         // LIBRERIA SAPI
+#include "sapi_i2c.h"     // LIBRERIA I2C
+#include "sapi_adc.h"	  // LIBRERIA ADC
 
-#include "FreeRTOS.h"
+#include "FreeRTOS.h"     // LIBRERIA FRERTOS
 #include "task.h"
 #include "queue.h"
 #include "strings.h"
@@ -62,19 +18,15 @@
 #include <stdlib.h>
 
 
-/*==================[macros and definitions]=================================*/
+/*==================  DEFINICION DE MACROS  =================================*/
 
-#define GY906_ADDR	0x00	// Dirección del sensor de temperatura
-#define TAMB_ADDR	0x06	// Dirección de la temperatura de ambiente
-#define TOBJ1_ADDR	0x07	// Dirección de la temperatura del objeto
+#define GY906_ADDR	0x00	// DIRECCION DEL SENSOR DE TEMPERATURA
+#define TAMB_ADDR	0x06	// DIRECCION DE LA TEMPERATURA DE AMBIENTE
+#define TOBJ1_ADDR	0x07	// DIRECCION DE LA TEMPERATURA DEL OBJETO
 
-/*==================[internal data declaration]==============================*/
+/*==================  DEFINICION VARIABLES INTERNAS ========================*/
 
-/*==================[internal functions declaration]=========================*/
-
-/*==================[internal data definition]===============================*/
-
-/*==================[external data definition]===============================*/
+// DEFINE LA ESTRUCTURA DE MEDICION QUE GUARDA LOS VALORES DE TENSION,TEMPERATURA,ALARMA_BAJA Y ALARMA_ALTA
 
 typedef struct
 {
@@ -85,12 +37,16 @@ typedef struct
 }
 medicion;
 
-/**
- * C++ version 0.4 char* style "itoa":
- * Written by Lukás Chmela
- * Released under GPLv3.
 
- */
+// DEFINE LA VARIABLE TIPO COLA
+
+xQueueHandle xQueue;
+
+
+/*==================    FUNCIONES EXTERNAS    ===============================*/
+
+
+// CONVIERTE  UN FLOAT A UN STRING CON 4 DIGITOS  CON EL FORMATO XX.XX
 
 static void floatToString( float valor, char *dst, uint8_t pos ){
 	uint16_t val;
@@ -109,6 +65,8 @@ static void floatToString( float valor, char *dst, uint8_t pos ){
 	dst[pos] = '\0';
 
 }
+
+// CONVIERTE  UN FLOAT A UN STRING CON 5 DIGITOS  CON EL FORMATO XXX.XX
 
 static void floatToString2( float valor, char *dst, uint8_t pos ){
 	uint16_t val;
@@ -129,6 +87,8 @@ static void floatToString2( float valor, char *dst, uint8_t pos ){
 	dst[pos] = '\0';
 
 }
+
+// CONVIERTE UN ENTERO A STRING
 
 char* itoa(int value, char* result, int base) {
    // check that the base if valid
@@ -154,145 +114,217 @@ char* itoa(int value, char* result, int base) {
    return result;
 }
 
-/*==================[internal functions definition]==========================*/
-
-static void initHardware(void)
-{
-   /* Inicializar la placa */
-   boardConfig();
-
-   /* Inicializar Uart */
-   uartConfig( UART_232, 9600 );
-   //debugPrintConfigUart( UART_USB, 115200 );
-   i2cConfig( I2C0, 100000 );	// Inicializa la comunicación I2C
-   adcConfig( ADC_ENABLE );		// Inicializa el ADC
-
-}
-
+// IMPRIME UN STRING POR UART
 
 void vPrintString( char * string){
    uartWriteString( UART_232, string );
 }
 
+/*================== DECLARACION DE FUNCIONES INTERNAS ==========================*/
 
-void vPrintNumber( int32_t number){
-   uint8_t uartBuff[10];
-   /* Conversión de number entero a ascii con base decimal */
-   itoa( number, uartBuff, 10 ); /* 10 significa decimal */
-   /* Enviar number */
-   uartWriteString( UART_232, uartBuff );
-}
+// FUNCION QUE INICIALIZA LOS PROTOCOLOS DE COMUNICACION Y EL HARDWARE DE LA PLACA
 
-
-void vPrintStringAndNumber( char * string, int32_t number){
-   vPrintString( string );
-   vPrintNumber( number );
-   vPrintString( "\r\n" );
-}
-
-/*==================[external functions definition]==========================*/
-
-
-/* The tasks to be created.  Two instances are created of the sender task while
-only a single instance is created of the receiver task. */
-static void vSenderTask( void *pvParameters );
-static void vReceiverTask( void *pvParameters );
-
-/*-----------------------------------------------------------*/
-
-/* Declare a variable of type xQueueHandle.  This is used to store the queue
-that is accessed by all three tasks. */
-xQueueHandle xQueue;
-
-
-int main( void )
+static void initHardware(void)
 {
-	 initHardware();
 
-    /* The queue is created to hold a maximum of 5 long values. */
-    xQueue = xQueueCreate( 3, sizeof( medicion ) );
+   //INICIALIZA LA PLACA
 
-	if( xQueue != NULL )
-	{
-		/* Create two instances of the task that will write to the queue.  The
-		parameter is used to pass the value that the task should write to the queue,
-		so one task will continuously write 100 to the queue while the other task
-		will continuously write 200 to the queue.  Both tasks are created at
-		priority 1. */
-		xTaskCreate( vSenderTask, "Sender1", 240, ( void * ) 100, 1, NULL );
-//		xTaskCreate( vSenderTask, "Sender2", 240, ( void * ) 200, 1, NULL );
+   boardConfig();
 
-		/* Create the task that will read from the queue.  The task is created with
-		priority 2, so above the priority of the sender tasks. */
-		xTaskCreate( vReceiverTask, "Receiver", 240, NULL, 2, NULL );
+   // INICIALIZA LOS PROTOCOLOS DE COMUNICACION
 
-		/* Start the scheduler so the created tasks start executing. */
-		vTaskStartScheduler();
-	}
-	else
-	{
-		/* The queue could not be created. */
-	}
-    /* If all is well we will never reach here as the scheduler will now be
-    running the tasks.  If we do reach here then it is likely that there was
-    insufficient heap memory available for a resource to be created. */
-	for( ;; ); // lo mismo que while(1);
-	return 0;
+   uartConfig( UART_232, 9600 );  // INICIALIZA LA COMUNICACION UART
+   i2cConfig( I2C0, 100000 );	 // INICIALIZA INICIALIZA LA COMUNICACION I2C
+   adcConfig( ADC_ENABLE );		// INICIALIZA EL ADC
+
 }
 
-/*-----------------------------------------------------------*/
+
+// FUNCION UTILIZADA PARA LEER LOS VALORES DE LAS ALARMAS BAJA Y ALTA PARA GUARDARLOS EN LA MEDICION ACTUAL
+
+void lectura_alarmas(medicion* medicion_actual,uint8_t * alarma,char* buffer_alarma_baja,char* buffer_alarma_alta )
+{
+
+
+	if( uartReadByte( UART_232, alarma ) ){
+
+		if(*alarma == 'B'){
+
+			uartReadByte( UART_232, alarma );
+
+			int i=0;
+			while(*alarma != 'B')
+			{
+				buffer_alarma_baja[i]=*alarma;
+
+				i++;
+
+				uartReadByte( UART_232, alarma );
+
+			}
+
+			buffer_alarma_baja[i]='\0';
+
+			medicion_actual->alarma_baja = atoi(buffer_alarma_baja);
+
+		}
+
+		if(*alarma == 'A'){
+
+			uartReadByte( UART_232, alarma );
+
+			int i=0;
+			while(*alarma != 'A')
+			{
+				buffer_alarma_alta[i]=*alarma;
+
+				i++;
+
+				uartReadByte( UART_232, alarma );
+
+			}
+
+			buffer_alarma_alta[i]='\0';
+
+			medicion_actual->alarma_alta = atoi(buffer_alarma_alta);
+
+		}
+
+	}
+
+};
+
+// GUARDA EL VALOR DE TEMPERATURA LEIDA EN MEDICION ACTUAL
+
+void lectura_temperatura(medicion* medicion_actual)
+{
+	// VARIABLES DE TEMPERATURA
+
+	uint16_t t_obj1=0;
+	uint8_t dato[3];
+	uint8_t dataToRead;
+
+	// LECTURA DEL VALOR DE TENSION DE TEMPERATURA
+
+	dataToRead = TOBJ1_ADDR;
+	i2cRead( I2C0,GY906_ADDR,&dataToRead,1,TRUE,dato,3,TRUE);
+	t_obj1 = dato[0];
+	t_obj1 |= dato[1]<<8;
+	medicion_actual->temperatura = 0.02 * t_obj1 - 273.15;
+
+}
+/*==================[TAREAS]==========================*/
+
+// GUARDA EL VALOR DE TEMPERATURA LEIDA EN TENSION ACTUAL
+
+void lectura_tension(medicion* medicion_actual)
+{
+	medicion_actual->tension = adcRead( CH1 ) * 10.475 / 1024 ;
+}
+
+// ENVIA LOS DATOS DE MEDICION POR PUERTO SERIE
+
+void envia_medicion_uart(medicion* medicion_actual,size_t tiempo)
+{
+
+	// VARAIBLES UTILIZADAS PARA LAS ALARMAS
+
+	char buffout[64];
+	char buffer_alarma_baja[64];
+	char buffer_alarma_alta[64];
+
+	// ENVIA MEDICION AL PUERTO SERIE
+
+
+	// tension actual
+
+	vPrintString( "*V" );
+	floatToString( medicion_actual->tension, buffout, 0 );
+	vPrintString( buffout );
+	vPrintString("\r\n");
+
+	// temperatura actual
+
+	vPrintString( "*T" );
+	floatToString( medicion_actual->temperatura, buffout, 0 );
+	vPrintString( buffout );
+	vPrintString("\r\n");
+
+	// envia la temperatura al monitor
+
+	vPrintString( "*M" );
+	vPrintString( "X" );
+	itoa(tiempo,buffout,10);
+	vPrintString( buffout );
+	vPrintString( "Y" );
+	floatToString( medicion_actual->temperatura, buffout, 0 );
+	vPrintString( buffout );
+	vPrintString("*\r\n");
+
+	// alarma de temperatura baja
+	vPrintString( "*B" );
+	floatToString( medicion_actual->alarma_baja, buffer_alarma_baja, 0 );
+	vPrintString( buffer_alarma_baja );
+	vPrintString("\r\n");
+
+	// alarma de temperatura alta
+
+	vPrintString( "*A" );
+	floatToString2( medicion_actual->alarma_alta, buffer_alarma_alta, 0 );
+	vPrintString( buffer_alarma_alta );
+	vPrintString("\r\n");
+
+}
+
+// TAREA QUE ENVIA DATOS A LA COLA
 
 static void vSenderTask( void *pvParameters )
 {
+/*---------------------------------- 	VARIABLES		 -----------------------------------------*/
 
-uint16_t t_obj1=0;
-uint8_t dato[3];
-uint8_t dataToRead;
+// VARIABLE DE LA ESTRUCTURA DE MEDICION
+
 static medicion medicion_actual={0,0,0,100};
+
+// VARIABLES USADAS PARA LA LECTURA DE ALARMAS BAJAS Y ALTAS
+
+static int i=0;
 uint8_t alarma = 0;
 char buffer_alarma_baja[64];
 char buffer_alarma_alta[64];
-portBASE_TYPE xStatus;
-static int i=0;
 
-portTickType xLastExecutionTime;
+// VARIABLES DE LA TAREA
 
-	xLastExecutionTime = xTaskGetTickCount();
+portBASE_TYPE xStatus; // VARIABLE USADA PARA GUARDAR EL ESTADO DE CARGA DE LA COLA
+
+portTickType xLastExecutionTime; // VARIABLE USADA PARA LA INICILIZACION DE TIEMPO DE LA TAREA
+
+xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO  LA TAREA
 
 
 
-	/* Two instances are created of this task so the value that is sent to the
-	queue is passed in via the task parameter rather than be hard coded.  This way
-	each instance can use a different value.  Cast the parameter to the required
-	type. */
-	//lValueToSend = ( long ) pvParameters;
-
-	/* As per most tasks, this task is implemented within an infinite loop. */
 	for( ;; )
 	{
-		/* The first parameter is the queue to which data is being sent.  The
-		queue was created before the scheduler was started, so before this task
-		started to execute.
 
-		The second parameter is the address of the data to be sent.
+		// ENCIENDE LA SALIDA DIGITAL PARA MEDIR LA TENSION
 
-		The third parameter is the Block time – the time the task should be kept
-		in the Blocked state to wait for space to become available on the queue
-		should the queue already be full.  In this case we don’t specify a block
-		time because there should always be space in the queue. */
+		gpioWrite(GPIO1,ON);
 
-		medicion_actual.tension = adcRead( CH1 ) * 3.30 / 1024 ;
+		// LECTURA DEL VALOR DE TENSION DE TEMPERATURA
 
-		/* Leo temperatura de objeto del sensor */
-		dataToRead = TOBJ1_ADDR;
-		i2cRead( I2C0,GY906_ADDR,&dataToRead,1,TRUE,&dato,3,TRUE );
-		t_obj1 = dato[0];
-		t_obj1 |= dato[1]<<8;
-		medicion_actual.temperatura = 0.02 * t_obj1 - 273.15;
+		lectura_temperatura(&medicion_actual);
 
+		// LECTURA DEL VALOR DE TENSION DE LA BATERIA
 
-		// valores de prueba
+		lectura_tension(&medicion_actual);
 
+		//APAGA LA SALIDA DIGITAL
+
+		gpioWrite(GPIO1,OFF);
+
+		// VALORES DE PRUEBA DE TEMPERATURA
+
+		/*
 		if(i>100)
 		{
 			i=0;
@@ -301,186 +333,154 @@ portTickType xLastExecutionTime;
 		medicion_actual.temperatura = i;
 
 		i++;
+		*/
 
-		if( uartReadByte( UART_232, &alarma ) ){
+		// LESTURA DE LOS VALORES DE ALARMA BAJA Y ALARMA ALTA
 
-			if(alarma == 'B'){
+		lectura_alarmas(&medicion_actual,&alarma,buffer_alarma_baja,buffer_alarma_alta);
 
-				uartReadByte( UART_232, &alarma );
-
-				int i=0;
-				while(alarma != 'B')
-				{
-					buffer_alarma_baja[i]=alarma;
-
-					i++;
-
-					uartReadByte( UART_232, &alarma );
-
-				}
-
-				buffer_alarma_baja[i]='\0';
-
-				medicion_actual.alarma_baja = atoi(buffer_alarma_baja);
-
-			}
-
-			if(alarma == 'A'){
-
-				uartReadByte( UART_232, &alarma );
-
-				int i=0;
-				while(alarma != 'A')
-				{
-					buffer_alarma_alta[i]=alarma;
-
-					i++;
-
-					uartReadByte( UART_232, &alarma );
-
-				}
-
-				buffer_alarma_alta[i]='\0';
-
-				medicion_actual.alarma_alta = atoi(buffer_alarma_alta);
-
-			}
-
-		}
+		// ENVIA LOS DATOS DE MEDICION(TENSION,TEMPERATURA,ALARMA BAJA,ALARMA ALTA) A LA COLA
 
 		xStatus = xQueueSendToBack( xQueue, &medicion_actual, 0 );
 
 
+		// CORROBORA SI SE PUDO CARGAR EL DATO EN LA COLA
+
 		if( xStatus != pdPASS )
 		{
-			/* We could not write to the queue because it was full – this must
-			be an error as the queue should never contain more than one item! */
-			vPrintString( "Could not send to the queue.\r\n" );
+			// EN CASO DE QUE NO SE PUEDA ESCRIBIR EN LA COLA
+
+			vPrintString( "NO SE PUEDE ESCRIBIR EN LA COLA PORQUE ESTA LLENA\r\n" );
 		}
 
-		/* Allow the other sender task to execute. */
-		//taskYIELD();
+		/* BLOQUEA LA TAREA UN TIEMPO FIJO */
+
 		vTaskDelayUntil(&xLastExecutionTime, 500);
 	}
 }
-/*-----------------------------------------------------------*/
+
+// TAREA QUE SACA DATOS DE LA COLA
 
 static void vReceiverTask( void *pvParameters )
 {
 
-/* Declare the variable that will hold the values received from the queue. */
+// VARIABLE TIEMPO USADA PARA EL MONITOR DE TEMPERATURA
+
+static size_t  tiempo=0;
+
+// VARIABLE DE LA ESTRUCTURA DE MEDICION
+
 static medicion medicion_actual={0,0,0,100};
-char buffout[64];		// Resultado en string
-char buffer_alarma_baja[64];
-char buffer_alarma_alta[64];
-portBASE_TYPE xStatus;
+
+// VARIABLES DE LA TAREA
+
+portBASE_TYPE xStatus; // VARIABLE USADA PARA GUARDAR EL ESTADO DE CARGA DE LA COLA
+
 const portTickType xTicksToWait = 100 / portTICK_RATE_MS;
-static int tiempo=0;
 
-portTickType xLastExecutionTime;
+portTickType xLastExecutionTime; // VARIABLE USADA PARA LA INICILIZACION DE TIEMPO DE LA TAREA
 
-	xLastExecutionTime = xTaskGetTickCount();
+xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO  LA TAREA
 
-	/* This task is also defined within an infinite loop. */
+
 	for( ;; )
 	{
-		/* As this task unblocks immediately that data is written to the queue this
-		call should always find the queue empty. */
+
 		if( uxQueueMessagesWaiting( xQueue ) != 0 )
 		{
-			vPrintString( "Queue should have been empty!\r\n" );
+			vPrintString( "LA COLA DEBERIA ESTAS VACIA\r\n" );
 		}
 
-		/* The first parameter is the queue from which data is to be received.  The
-		queue is created before the scheduler is started, and therefore before this
-		task runs for the first time.
-
-		The second parameter is the buffer into which the received data will be
-		placed.  In this case the buffer is simply the address of a variable that
-		has the required size to hold the received data.
-
-		the last parameter is the block time – the maximum amount of time that the
-		task should remain in the Blocked state to wait for data to be available should
-		the queue already be empty. */
 		xStatus = xQueueReceive( xQueue, &medicion_actual, xTicksToWait );
 
 		if( xStatus == pdPASS )
 		{
-			/* Data was successfully received from the queue, print out the received value. */
 
-			// tension actual
+			// ENVIA LA MEDICION POR PUERTO SERIE
 
-			vPrintString( "*V" );
-			floatToString( medicion_actual.tension, buffout, 0 );
-			vPrintString( buffout );
-			vPrintString("\r\n");
+			envia_medicion_uart(&medicion_actual,tiempo);
 
-			// temperatura actual
-
-			vPrintString( "*T" );
-			floatToString( medicion_actual.temperatura, buffout, 0 );
-			vPrintString( buffout );
-			vPrintString("\r\n");
-
-			// envia la temperatura al monitor
-
-			vPrintString( "*M" );
-			vPrintString( "X" );
-			itoa(tiempo,buffout,10);
-			vPrintString( buffout );
-			vPrintString( "Y" );
-			floatToString( medicion_actual.temperatura, buffout, 0 );
-			vPrintString( buffout );
-			vPrintString("*\r\n");
-
-			// alarma de temperatura baja
-			vPrintString( "*B" );
-			floatToString( medicion_actual.alarma_baja, buffer_alarma_baja, 0 );
-			vPrintString( buffer_alarma_baja );
-			vPrintString("\r\n");
-
-			// alarma de temperatura alta
-
-			vPrintString( "*A" );
-			floatToString2( medicion_actual.alarma_alta, buffer_alarma_alta, 0 );
-			vPrintString( buffer_alarma_alta );
-			vPrintString("\r\n");
+			// ACTIVA LA ALARMA SI LA TEMPERATURA ACTUAL ES MENOR A LA ALARMA BAJA
 
 			if(medicion_actual.temperatura < medicion_actual.alarma_baja)
 			{
+				// ENVIA POR PUERTO SERIE LA CADENA DE CARACTERES QUE ACTIVA LA ALARMA BAJA
 				vPrintString( "*L" );
 				vPrintString("\r\n");
 			}
+
+			// ACTIVA LA ALARMA SI LA TEMPERATURA ACTUAL ES MAYOR A LA ALARMA ALTA
+
 			if(medicion_actual.temperatura > medicion_actual.alarma_alta)
 			{
+				// ENVIA POR PUERTO SERIE LA CADENA DE CARACTERES QUE ACTIVA LA ALARMA ALTA
 				vPrintString( "*H" );
 				vPrintString("\r\n");
 
 			}
 
+			// AUMENTA LA VARIABLE TIEMPO
+
 			tiempo++;
 
+			/*
 			if(tiempo>100)
 			{
 				tiempo=0;
 			}
-
+			*/
 		}
 		else
 		{
-			/* We did not receive anything from the queue even after waiting for 100ms.
-			This must be an error as the sending tasks are free running and will be
-			continuously writing to the queue. */
-			vPrintString( "Could not receive from the queue.\r\n" );
+
+			vPrintString( "NO SE PUEDE SACAR UN DATO DE LA COLA\r\n" );
 		}
+
+		/* BLOQUEA LA TAREA UN TIEMPO FIJO */
 
 		vTaskDelayUntil(&xLastExecutionTime, 500);
 
 	}
 }
-/*-----------------------------------------------------------*/
 
 
-/** @} doxygen end group definition */
+/*=============================			 MAIN 			=======================================*/
 
-/*==================[end of file]============================================*/
+int main( void )
+{
+
+	// INICIALIZA EL HARDWARE
+
+	 initHardware();
+
+    // CREA UNA COLA DE 3 TRES ESTRUCTURAS DE MEDICION
+
+    xQueue = xQueueCreate( 3, sizeof( medicion ) );
+
+	if( xQueue != NULL )
+	{
+
+		// SE CREA LA TAREA QUE ENVIA DATOS DE LA COLA
+
+		xTaskCreate( vSenderTask, "Sender1", 240, ( void * ) 100, 1, NULL );
+
+		// SE CREA LA TAREA QUE SACA DATOS DE LA COLA
+
+		xTaskCreate( vReceiverTask, "Receiver", 240, NULL, 2, NULL );
+
+		// TOMA EL CONTROL EL MANEJADOR DE TAREAS
+
+		vTaskStartScheduler();
+	}
+	else
+	{
+		// SI NO TIENE ESPACIO PARA CREAR LA COLA
+	}
+
+	for( ;; ); // CICLO DE INFINITO
+
+	return 0;
+}
+
+
+/*==================		 TERMINA EL ARCHIVO		============================================*/
