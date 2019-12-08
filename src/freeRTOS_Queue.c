@@ -139,60 +139,111 @@ static void initHardware(void)
 
 }
 
-
-// FUNCION UTILIZADA PARA LEER LOS VALORES DE LAS ALARMAS BAJA Y ALTA PARA GUARDARLOS EN LA MEDICION ACTUAL
-
-void lectura_alarmas(medicion* medicion_actual,uint8_t * alarma,char* buffer_alarma_baja,char* buffer_alarma_alta )
+void lectura_alarmas(medicion* medicion_actual)
 {
 
+	uint8_t alarma = 0,alarma_baja=0,alarma_alta=0 ;
+	char buffer_alarma_baja[64];
+	char buffer_alarma_alta[64];
 
-	if( uartReadByte( UART_232, alarma ) ){
 
-		if(*alarma == 'B'){
 
-			uartReadByte( UART_232, alarma );
+	if( uartReadByte( UART_232,&alarma ) ){
 
-			int i=0;
-			while(*alarma != 'B')
+		if(alarma == 'A'){
+
+			uartReadByte( UART_232,&alarma );
+
+			size_t j=0;
+
+			if(alarma != 'A')
 			{
-				buffer_alarma_baja[i]=*alarma;
+				buffer_alarma_alta[j]=alarma;
 
-				i++;
+				j++;
 
-				uartReadByte( UART_232, alarma );
+				uartReadByte( UART_232,&alarma );
 
 			}
 
-			buffer_alarma_baja[i]='\0';
+			if(alarma != 'A')
+			{
+				buffer_alarma_alta[j]=alarma;
 
-			medicion_actual->alarma_baja = atoi(buffer_alarma_baja);
+				j++;
+
+				uartReadByte( UART_232,&alarma );
+			}
+
+
+			if(alarma != 'A')
+			{
+				buffer_alarma_alta[j]=alarma;
+
+				j++;
+
+				uartReadByte( UART_232, &alarma );
+			}
+
+
+			buffer_alarma_alta[j]='\0';
+
+			alarma_alta = atoi(buffer_alarma_alta);
+
+			if( alarma_alta >= 20 && alarma_alta <= 100 )
+
+				medicion_actual->alarma_alta = alarma_alta;
 
 		}
 
-		if(*alarma == 'A'){
 
-			uartReadByte( UART_232, alarma );
+		if(alarma == 'B'){
 
-			int i=0;
-			while(*alarma != 'A')
+			uartReadByte( UART_232, &alarma );
+
+			size_t j=0;
+
+			if(alarma != 'B')
 			{
-				buffer_alarma_alta[i]=*alarma;
+				buffer_alarma_baja[j]=alarma;
 
-				i++;
+				j++;
 
-				uartReadByte( UART_232, alarma );
+				uartReadByte( UART_232, &alarma );
 
 			}
 
-			buffer_alarma_alta[i]='\0';
+			if(alarma != 'B')
+			{
+				buffer_alarma_baja[j]=alarma;
 
-			medicion_actual->alarma_alta = atoi(buffer_alarma_alta);
+				j++;
+
+				uartReadByte( UART_232, &alarma );
+			}
+
+
+			if(alarma != 'B')
+			{
+				buffer_alarma_baja[j]=alarma;
+
+				j++;
+			}
+
+			buffer_alarma_baja[j]='\0';
+
+			alarma_baja = atoi(buffer_alarma_baja);
+
+			if( alarma_baja >= 0 && alarma_baja <= 20 )
+
+					medicion_actual->alarma_baja = alarma_baja;
+
 
 		}
 
 	}
 
-};
+}
 
 // GUARDA EL VALOR DE TEMPERATURA LEIDA EN MEDICION ACTUAL
 
@@ -219,6 +270,7 @@ void lectura_temperatura(medicion* medicion_actual)
 
 void lectura_tension(medicion* medicion_actual)
 {
+
 	medicion_actual->tension = adcRead( CH1 ) * 10.475 / 1024 ;
 }
 
@@ -288,10 +340,7 @@ static medicion medicion_actual={0,0,0,100};
 
 // VARIABLES USADAS PARA LA LECTURA DE ALARMAS BAJAS Y ALTAS
 
-static int i=0;
-uint8_t alarma = 0;
-char buffer_alarma_baja[64];
-char buffer_alarma_alta[64];
+static size_t i=0;
 
 // VARIABLES DE LA TAREA
 
@@ -337,7 +386,7 @@ xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO 
 
 		// LESTURA DE LOS VALORES DE ALARMA BAJA Y ALARMA ALTA
 
-		lectura_alarmas(&medicion_actual,&alarma,buffer_alarma_baja,buffer_alarma_alta);
+		lectura_alarmas(&medicion_actual);
 
 		// ENVIA LOS DATOS DE MEDICION(TENSION,TEMPERATURA,ALARMA BAJA,ALARMA ALTA) A LA COLA
 
@@ -388,7 +437,7 @@ xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO 
 
 		if( uxQueueMessagesWaiting( xQueue ) != 0 )
 		{
-			vPrintString( "LA COLA DEBERIA ESTAS VACIA\r\n" );
+			vPrintString( "LA COLA DEBERIA ESTAR VACIA\r\n" );
 		}
 
 		xStatus = xQueueReceive( xQueue, &medicion_actual, xTicksToWait );
@@ -400,8 +449,8 @@ xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO 
 
 			envia_medicion_uart(&medicion_actual,tiempo);
 
-			// ACTIVA LA ALARMA SI LA TEMPERATURA ACTUAL ES MENOR A LA ALARMA BAJA
 
+			// ACTIVA LA ALARMA SI LA TEMPERATURA ACTUAL ES MENOR A LA ALARMA BAJA
 			if(medicion_actual.temperatura < medicion_actual.alarma_baja)
 			{
 				// ENVIA POR PUERTO SERIE LA CADENA DE CARACTERES QUE ACTIVA LA ALARMA BAJA
@@ -429,6 +478,7 @@ xLastExecutionTime = xTaskGetTickCount(); // INICIALIZA EL TIEMPO DONDE COMENZO 
 				tiempo=0;
 			}
 			*/
+
 		}
 		else
 		{
@@ -453,16 +503,16 @@ int main( void )
 
 	 initHardware();
 
-    // CREA UNA COLA DE 3 TRES ESTRUCTURAS DE MEDICION
+    // CREA UNA COLA DE 5 TRES ESTRUCTURAS DE MEDICION
 
-    xQueue = xQueueCreate( 3, sizeof( medicion ) );
+    xQueue = xQueueCreate( 5, sizeof( medicion ) );
 
 	if( xQueue != NULL )
 	{
 
 		// SE CREA LA TAREA QUE ENVIA DATOS DE LA COLA
 
-		xTaskCreate( vSenderTask, "Sender1", 240, ( void * ) 100, 1, NULL );
+		xTaskCreate( vSenderTask, "Sender1", 240, NULL, 1, NULL );
 
 		// SE CREA LA TAREA QUE SACA DATOS DE LA COLA
 
